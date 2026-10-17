@@ -1,0 +1,107 @@
+# Greenhouse NN-MPC project configuration
+
+target:
+  temperature: 22.0   # °C
+  humidity: 65.0      # %RH
+  vpd: 0.8            # kPa
+
+dataset:
+  path: "dataset/texcoco_greenhouse_enriched_1week_top30.csv"
+  timestamp_col: "timestamp_local"
+
+emulator:
+  timestep_minutes: 5          # same step as the dataset
+  simulation_hours: 24
+  weather_profile: "dataset"   # dataset | summer_clear | winter_cloudy | spring_variable
+  floor_area_m2: 100.0         # greenhouse size, used for energy in kWh
+  max_substep_seconds: 60      # RK4 integration step
+
+  # start of a synthetic-weather run (dataset days start from the measured state)
+  initial_state:
+    temp_offset: 4.0           # °C above the outdoor temperature
+    humidity: 80.0             # %RH
+    soil_moisture: 60.0        # %
+
+  # Physical parameters per m² of floor.
+  # (fit) = calibrated on the Texcoco data by: python scripts/calibrate_emulator.py --write-config
+  physics:
+    thermal_capacity: 128302         # (fit) J/(m²·K) air + structure + plants
+    heat_loss_coeff: 9.2179          # (fit) W/(m²·K) heat loss through the cover
+    solar_gain_factor: 0.437676      # (fit) share of outdoor solar radiation that heats the air
+    heater_max_power: 300            # W/m² heater output at 100 %
+    floor_capacity: 2.48108e+06      # (fit) J/(m²·K) floor heat store
+    floor_coupling: 8.58865          # (fit) W/(m²·K) air <-> floor
+    floor_ground_coupling: 2.63722   # (fit) W/(m²·K) floor <-> deep ground
+    ground_temp: 16.4084             # (fit) °C deep ground (weather profiles may override)
+    greenhouse_height: 3             # m mean height
+    leak_ach: 0.456988               # (fit) 1/h air changes with vents closed
+    wind_ach: 0.078301               # (fit) 1/h extra leakage per km/h of wind
+    stack_ach: 0.485232              # (fit) 1/h per √K warm-air leakage
+    vent_max_ach: 30                 # 1/h added air changes at 100 % ventilation
+    vent_fan_power: 10               # W/m² fan power at 100 % ventilation
+    transp_rad_coeff: 2.69911e-06    # (fit) g/J transpiration per W/m² of sun
+    transp_vpd_coeff: 0.00461616     # (fit) g/(m²·s·kPa) transpiration per kPa of VPD
+    substrate_capacity: 35976.1      # (fit) J/(m²·K) soil at the sensor
+    substrate_coupling: 0.839237     # (fit) W/(m²·K) soil <-> air
+    substrate_ground_coupling: 1.66673 # (fit) W/(m²·K) soil <-> deep ground
+    soil_drain_rate: 0.118541        # (fit) %/h slow drainage
+    field_capacity: 49.1714          # (fit) % above this water drains quickly...
+    excess_drain_rate: 0.592152      # (fit) 1/h ...at this rate per % above it
+    soil_water_capacity_mm: 8.91591  # (fit) mm water per m² at 100 %
+    wilting_point: 15                # % plants stop transpiring below this
+    stress_point: 30                 # % transpiration drops below this
+    irrigation_threshold: 48         # % irrigate when soil moisture is below...
+    irrigation_target: 65            # % ...up to this level
+    irrigation_start_hour: 9         # irrigation only between these hours
+    irrigation_end_hour: 16
+    light_transmission: 0.223049     # (fit) indoor PPFD per W/m² of outdoor sun
+
+# Outdoor weather that drives the emulator.
+# "dataset" replays a real Texcoco day, the others are synthetic daily cycles.
+weather_profiles:
+  dataset:
+    day: "2025-09-14"
+  summer_clear:
+    start_date: "2025-07-15"
+    temp_mean: 24.0           # °C
+    temp_amplitude: 7.0       # °C (max at 15:00, min at 03:00)
+    rh_mean: 50.0             # %
+    rh_amplitude: 18.0        # %
+    solar_peak: 950.0         # W/m² at noon on a clear day
+    day_length_hours: 14.0
+    cloud_mean: 0.05          # 0 = clear, 1 = overcast
+    cloud_variability: 0.05
+    wind_mean: 6.0            # km/h
+    ground_temp: 22.0         # °C
+  winter_cloudy:
+    start_date: "2025-01-15"
+    temp_mean: 6.0
+    temp_amplitude: 3.0
+    rh_mean: 85.0
+    rh_amplitude: 8.0
+    solar_peak: 550.0
+    day_length_hours: 10.0
+    cloud_mean: 0.65
+    cloud_variability: 0.2
+    wind_mean: 10.0
+    ground_temp: 12.0
+  spring_variable:
+    start_date: "2025-04-15"
+    temp_mean: 15.0
+    temp_amplitude: 7.0
+    rh_mean: 65.0
+    rh_amplitude: 15.0
+    solar_peak: 850.0
+    day_length_hours: 12.5
+    cloud_mean: 0.35
+    cloud_variability: 0.35
+    wind_mean: 8.0
+    ground_temp: 17.0
+
+mqtt:
+  broker_host: "localhost"
+  broker_port: 1883
+  topic_sensors: "greenhouse/sensors/data"
+  topic_actuators: "greenhouse/actuators/control"
+  topic_status: "greenhouse/emulator/status"
+  publish_interval_sec: 1   # real seconds per simulated step (realtime mode)

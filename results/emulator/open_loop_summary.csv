@@ -1,0 +1,5 @@
+profile,outdoor_min_c,outdoor_max_c,indoor_min_c,indoor_max_c,rmse_vs_target_c,hours_below_20c,hours_above_24c,humidity_range,irrigations
+dataset,11.6,22.3,14.9,35.1,7.34,12.5,9.1,42-87,2
+summer_clear,16.5,31.6,20.3,43.0,11.39,0.0,16.4,36-71,2
+winter_cloudy,3.2,9.3,7.0,14.8,12.67,24.0,0.0,65-87,1
+spring_variable,8.4,22.7,12.9,32.4,6.84,13.7,7.5,44-76,2
