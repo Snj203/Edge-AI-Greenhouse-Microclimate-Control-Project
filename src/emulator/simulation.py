@@ -58,6 +58,7 @@ def run(emu: GreenhouseEmulator, weather: pd.DataFrame, policy: Policy | None = 
         obs = emu.observe(w)
         heater, vent = policy(obs, k) if policy else (0.0, 0.0)
         rows.append({"time": emu.time, "step": k, **obs, "heater_power": heater, "ventilation_rate": vent,
-                     "heater_energy_kwh": emu.heater_energy_kwh, "vent_energy_kwh": emu.vent_energy_kwh})
+                     "heater_energy_kwh": emu.heater_energy_kwh, "vent_energy_kwh": emu.vent_energy_kwh,
+                     "irrigation_count": emu.irrigation_count})
         emu.step(w, heater, vent)
     return pd.DataFrame(rows)

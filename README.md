@@ -12,7 +12,7 @@ broker (Eclipse Mosquitto) between them, as in a real sensor → controller → 
 | Part | Content | Status |
 |---|---|---|
 | 1 | Environment and MQTT, dataset analysis, greenhouse emulator and its calibration | done |
-| 2 | Surrogate neural network that predicts the greenhouse 5 minutes ahead | planned |
+| 2 | Surrogate neural network that predicts the greenhouse 5 minutes ahead | done |
 | 3 | PID baseline and the experiment setup | planned |
 | 4 | NN-MPC controller and a first comparison with PID | planned |
 
@@ -25,7 +25,7 @@ py -V:3.14 -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
 python scripts/check_env.py        # packages, PyTorch, dataset, MQTT broker
-python -m pytest                   # 18 tests
+python -m pytest                   # 27 tests
 ```
 
 Run all commands from the project root.
@@ -39,6 +39,8 @@ Run all commands from the project root.
 | Emulator without control, all weather profiles | `python scripts/plot_open_loop.py` | `results/emulator/` |
 | Emulator over MQTT | `python scripts/run_emulator.py --profile winter_cloudy` | `results/emulator/run_*.csv` |
 | Closed-loop demo (two terminals) | `python scripts/demo_controller.py` and `python scripts/run_emulator.py --lockstep --interval 0` | `results/emulator/run_dataset.*` |
+| Training data for the network (~40 s) | `python scripts/prepare_training_data.py` | `data/processed/` |
+| Train and evaluate the network (~3 min) | `python scripts/train_surrogate.py` | `models/`, `results/surrogate/` |
 
 Watch the MQTT traffic: `mosquitto_sub -t "greenhouse/#" -v`
 
@@ -75,17 +77,49 @@ MQTT topics: `greenhouse/sensors/data` (emulator → controller), `greenhouse/ac
 (controller → emulator), `greenhouse/emulator/status` (started / finished). In lockstep mode the emulator
 waits for the controller's reply at every step, so runs are reproducible.
 
+## Surrogate network
+
+An MLP (64 → 32, ReLU) predicts the greenhouse state 5 minutes ahead from the current state, the
+actuators and the weather ([architecture.py](src/models/architecture.py)). It predicts the change of the
+state, and its outputs are kept within physical limits. Chained predictions over 12 steps (1 hour, the
+MPC horizon) are differentiable with respect to the actuator plan.
+
+- **Data:** the real Texcoco week (heater and vents off) plus 270 emulator days with randomly varied
+  weather and four control styles (random levels, thermostat, fixed-level blocks, off). Steps with
+  irrigation are excluded. Split by whole days: 70 % train, 15 % validation, 15 % test.
+- **Training:** MSE on the standardised change, Adam (lr 0.001, batch 64), early stopping (patience 20).
+- **Variants:** `mlp_plan` with the plan's 9 inputs, and `mlp` with 12 inputs (+ soil temperature,
+  outdoor humidity, wind). `mlp` has the lower 1-hour error on the validation days and is saved as
+  `models/greenhouse_nn_model.pth`.
+
+Temperature and humidity errors (RMSE) on the emulator test days:
+
+| | T, 5 min | T, 1 h | RH, 1 h |
+|---|---|---|---|
+| `mlp_plan` (9 inputs) | 0.039 °C | 0.39 °C | 3.17 % |
+| **`mlp`** (12 inputs) | **0.025 °C** | **0.27 °C** | **0.80 %** |
+| "nothing changes" guess | 0.19 °C | 1.98 °C | 5.35 % |
+
+- The plan's criterion (temperature error 5 min ahead < 0.5 °C) is met.
+- Heater and vent check: from the same state, four actions (off, heater, vents, both at 50 %) held for
+  1 hour in four situations. In all 12 cases with an actuator on, the network moves the temperature the
+  same way as the emulator compared with "off" (e.g. winter night, heater 100 %: emulator +6.2 °C,
+  network +5.9 °C). The largest error after 1 hour is 1.4 °C (full heating at a sunny spring noon, rare in the data).
+- A 1-hour chained prediction takes about 1–2 ms on the PC.
+
 ## Limitations
 
 - CO₂ is not modelled; VPD is reported as VPD.
 - No cooling: ventilation cannot bring the greenhouse below the outdoor temperature.
 - Light and soil moisture are monitored, not controlled (no lamps or irrigation actuator).
+- The network mostly learns the emulator: on the real test day its 1-hour temperature error is 2.3 °C
+  (the "nothing changes" guess: 2.7 °C), mainly because of the emulator's own error against the real greenhouse.
 
 ## Roadmap
 
 After part 4:
 - Full PID vs NN-MPC comparison on more days, energy at equal comfort, prediction horizon study, final report.
-- Comfort band (e.g. 21–23 °C) instead of a fixed set-point; other network types (LSTM).
+- Comfort band (e.g. 21–23 °C) instead of a fixed set-point; other networks (LSTM, wider MLP).
 - Swappable greenhouse model: one interface for this emulator and an established open model (e.g. GreenLight).
 - Weather profiles from real weather in Kyrgyzstan (OpenMeteo history: Bishkek, Osh, Naryn).
 - Day/night electricity prices, sensor noise and actuator delays, humidity/VPD in the control goal.

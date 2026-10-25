@@ -105,3 +105,20 @@ mqtt:
   topic_actuators: "greenhouse/actuators/control"
   topic_status: "greenhouse/emulator/status"
   publish_interval_sec: 1   # real seconds per simulated step (realtime mode)
+
+# Surrogate neural network: predicts the greenhouse state 5 minutes ahead
+nn:
+  hidden_layers: [64, 32]
+  learning_rate: 0.001
+  batch_size: 64
+  epochs: 200                     # maximum; training stops earlier when validation stops improving
+  early_stopping_patience: 20     # epochs without improvement before stopping
+  train_val_test_split: [0.7, 0.15, 0.15]   # by whole days, not single rows
+  rmse_threshold: 0.5             # °C, required temperature error 5 min ahead (plan criterion)
+  rollout_steps: 12               # 1-hour check of chained predictions = MPC horizon (12 × 5 min)
+  model_path: "models/greenhouse_nn_model.pth"
+  data:                           # training data: real Texcoco week + emulator days
+    episodes_per_profile: 70      # emulator days per synthetic weather profile (weather randomly varied)
+    dataset_episodes_per_day: 10  # emulator days per real-weather day (12–17 Sep), different control each
+    seed: 42
+    output_dir: "data/processed"

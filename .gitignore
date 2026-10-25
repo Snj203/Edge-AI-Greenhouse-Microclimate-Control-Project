@@ -10,3 +10,6 @@ __pycache__/
 .idea/
 Thumbs.db
 .DS_Store
+
+# Generated (rebuilt by scripts/prepare_training_data.py)
+data/processed/
