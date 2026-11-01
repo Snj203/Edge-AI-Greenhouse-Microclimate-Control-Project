@@ -1,10 +1,14 @@
 """MQTT tests. They need Mosquitto on localhost:1883 and are skipped without it."""
 
+import copy
 import threading
 import time
 
+import pandas as pd
 import pytest
 
+from src.controllers.controller_pid import PIDController
+from src.controllers.experiment import prepare_run, run_mqtt, run_offline
 from src.emulator.mqtt_node import EmulatorNode
 from src.emulator.simulation import create_emulator
 from src.emulator.weather import build_weather
@@ -62,3 +66,15 @@ def test_emulator_lockstep_with_controller(cfg):
     assert [m["step"] for m in messages] == list(range(len(weather)))
     assert (log["heater_power"] == 40.0).all() and (log["ventilation_rate"] == 10.0).all()
     assert emu.heater_energy_kwh > 0
+
+
+# Lockstep makes the MQTT run exactly repeatable: same commands and climate as direct calls
+def test_pid_over_mqtt_matches_direct_calls(cfg):
+    weather, emu = prepare_run(cfg, "spring_variable", hours=12)
+    direct = run_offline(PIDController.from_config(cfg, "heat_vent"), copy.deepcopy(emu), weather)
+    over_mqtt = run_mqtt(PIDController.from_config(cfg, "heat_vent"), emu, weather, cfg, command_timeout=2.0)
+    assert over_mqtt.attrs["mqtt"] == {"commands_received": len(weather), "timeouts": 0}
+    cols = ["temperature", "humidity", "heater_power", "ventilation_rate"]
+    pd.testing.assert_frame_equal(over_mqtt[cols], direct[cols])
+    assert direct["ventilation_rate"].max() > 0 and direct["heater_power"].max() > 0  # both loops took part
+    assert over_mqtt["latency_ms"].notna().all()

@@ -18,11 +18,25 @@ def weather_at(weather: pd.DataFrame, k: int) -> dict:
     return {c: float(row[c]) for c in WEATHER_COLUMNS}
 
 
+# Reference thermostat for the warm start: heats in proportion below `target`, vents in proportion
+# above `vent_above` (gain in % per °C). It is not one of the compared controllers.
+def hold_target_policy(target: float, vent_above: float, gain: float = 100.0) -> Policy:
+    # heater and vent levels for the current temperature
+    def policy(obs: dict, k: int) -> tuple[float, float]:
+        t = obs["temperature"]
+        return min(max(gain * (target - t), 0.0), 100.0), min(max(gain * (t - vent_above), 0.0), 100.0)
+
+    return policy
+
+
 # Emulator ready to start at the first weather row.
-# Floor and soil are warmed up first: the first day is replayed `spin_up_days` times with the
-# actuators off. A dataset day then starts from the indoor values measured at that moment.
+# Floor and soil are warmed up first: the first day is replayed `spin_up_days` times.
+#   spin_up_policy None   actuators off (the greenhouse without control). A dataset day then starts
+#                         from the indoor values measured at that moment.
+#   spin_up_policy given  the greenhouse is operated by this rule during the spin-up (warm start
+#                         for runs with a controller); the state reached is kept.
 def create_emulator(weather: pd.DataFrame, cfg: dict | None = None, spin_up_days: int = 2,
-                    params: PhysicsParams | None = None) -> GreenhouseEmulator:
+                    params: PhysicsParams | None = None, spin_up_policy: Policy | None = None) -> GreenhouseEmulator:
     cfg = cfg or load_config()
     emu_cfg = cfg["emulator"]
     params = params or PhysicsParams.from_config(cfg)
@@ -39,10 +53,12 @@ def create_emulator(weather: pd.DataFrame, cfg: dict | None = None, spin_up_days
     steps_per_day = min(len(weather), round(24 * 60 / emu_cfg["timestep_minutes"]))
     for _ in range(spin_up_days):
         for k in range(steps_per_day):
-            emu.step(weather_at(weather, k), 0.0, 0.0)
+            w = weather_at(weather, k)
+            heater, vent = spin_up_policy(emu.observe(w), k) if spin_up_policy else (0.0, 0.0)
+            emu.step(w, heater, vent)
 
     measured = weather.attrs.get("initial_state")
-    if measured:
+    if measured and spin_up_policy is None:
         emu.reset(measured["temperature"], measured["humidity"], measured["soil_temperature"],
                   measured["soil_moisture"], start, floor_temperature=emu.Tf)
     else:

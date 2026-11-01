@@ -122,3 +122,23 @@ nn:
     dataset_episodes_per_day: 10  # emulator days per real-weather day (12–17 Sep), different control each
     seed: 42
     output_dir: "data/processed"
+
+# Runs with a controller: one controller, one weather profile, 24 hours
+experiment:
+  hours: 24
+  spin_up_days: 7           # warm start: before the run a reference thermostat holds the target this many days,
+                            # so every controller starts from the same heated greenhouse
+  temperature_band: 1.0     # °C comfort band target ± band, for the "hours in band" metrics
+
+# PID controller, run every 5 min; time unit of the gains = minutes.
+# (tuned) values are written by: python scripts/tune_pid.py --write-config
+pid:
+  kp: 160.0                 # (tuned) %/°C           heater loop
+  ki: 2.0                   # (tuned) %/(°C·min)
+  kd: 0.0                   # (tuned) %·min/°C
+  anti_windup_limit: 100.0  # % limit of the integral term
+  ventilation:              # second loop of the heater + ventilation variant (heat_vent)
+    setpoint_offset: 1.0    # °C vents open above target + offset; no venting while the heater is on
+    kp: 30.0                # (tuned) %/°C
+    ki: 0.5                 # (tuned) %/(°C·min)
+    kd: 0.0                 # (tuned) %·min/°C

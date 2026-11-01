@@ -13,7 +13,7 @@ broker (Eclipse Mosquitto) between them, as in a real sensor → controller → 
 |---|---|---|
 | 1 | Environment and MQTT, dataset analysis, greenhouse emulator and its calibration | done |
 | 2 | Surrogate neural network that predicts the greenhouse 5 minutes ahead | done |
-| 3 | PID baseline and the experiment setup | planned |
+| 3 | PID baseline and the experiment setup | done |
 | 4 | NN-MPC controller and a first comparison with PID | planned |
 
 ## Setup (Windows)
@@ -25,7 +25,7 @@ py -V:3.14 -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
 python scripts/check_env.py        # packages, PyTorch, dataset, MQTT broker
-python -m pytest                   # 27 tests
+python -m pytest                   # 37 tests
 ```
 
 Run all commands from the project root.
@@ -41,6 +41,9 @@ Run all commands from the project root.
 | Closed-loop demo (two terminals) | `python scripts/demo_controller.py` and `python scripts/run_emulator.py --lockstep --interval 0` | `results/emulator/run_dataset.*` |
 | Training data for the network (~40 s) | `python scripts/prepare_training_data.py` | `data/processed/` |
 | Train and evaluate the network (~3 min) | `python scripts/train_surrogate.py` | `models/`, `results/surrogate/` |
+| Tune the PID gains (~1.5 min) | `python scripts/tune_pid.py [--write-config]` | `results/pid/tuning.*` |
+| PID on all weather profiles over MQTT (~1 min) | `python scripts/run_pid_baseline.py [--offline]` | `results/pid_baseline.csv`, `results/pid/` |
+| PID as its own process (two terminals) | `python scripts/run_controller.py` and `python scripts/run_emulator.py --lockstep --interval 0 --warm` | `results/emulator/run_dataset.*` |
 
 Watch the MQTT traffic: `mosquitto_sub -t "greenhouse/#" -v`
 
@@ -107,6 +110,41 @@ Temperature and humidity errors (RMSE) on the emulator test days:
   network +5.9 °C). The largest error after 1 hour is 1.4 °C (full heating at a sunny spring noon, rare in the data).
 - A 1-hour chained prediction takes about 1–2 ms on the PC.
 
+## PID baseline
+
+A discrete PID runs on every sensor message (every 5 min) with the plan's formula
+([controller_pid.py](src/controllers/controller_pid.py)); the integral is limited and does not grow while
+the output is at 0 or 100 % (anti-windup).
+
+- **Variants:** `pid_heat` — heater only (the plan's baseline); `pid_heat_vent` — plus a second loop that
+  opens the vents above 23 °C (target + 1 °C). While the heater is on, the vents stay closed.
+- **Tuning:** grid search on 9 separate tuning days, lowest temperature RMSE among gains where each
+  actuator moves on average at most 1 % per step. Heater Kp 160 %/°C, Ki 2 %/(°C·min), Kd 0; vents Kp 30,
+  Ki 0.5. The plan's gains (2 / 0.1 / 0.5) were far too weak: 1 °C of error gave only 2 % of heating.
+- **Warm start:** before every 24-hour run the day's weather is replayed for 7 days with a simple
+  reference thermostat at the target, so every controller starts from the same heated greenhouse.
+- **Runs over MQTT** in lockstep give exactly the same result as direct calls (checked by a test).
+
+24 hours per weather profile, 100 m² greenhouse:
+
+| Profile | Variant | Energy | Temperature RMSE | Hours in 21–23 °C |
+|---|---|---|---|---|
+| winter_cloudy | heater only | 502.2 kWh | 0.13 °C | 24.0 |
+| winter_cloudy | heater + vents | 502.2 kWh | 0.13 °C | 24.0 |
+| spring_variable | heater only | 174.7 kWh | 5.06 °C | 14.3 |
+| spring_variable | heater + vents | 192.1 kWh | 2.10 °C | 16.1 |
+| dataset (14 Sep) | heater only | 132.6 kWh | 6.72 °C | 13.1 |
+| dataset (14 Sep) | heater + vents | 154.4 kWh | 2.64 °C | 14.7 |
+| summer_clear | heater only | 14.0 kWh | 11.60 °C | 6.5 |
+| summer_clear | heater + vents | 30.2 kWh | 7.65 °C | 7.8 |
+
+- The temperature never falls below 21 °C on any profile; in winter the PID holds 22 °C within 0.13 °C.
+- All remaining error is daytime overheating. Vents cannot cool below the outdoor temperature, so on
+  sunny days no controller can reach the plan's ≤ 1 °C RMSE without a cooling actuator.
+- Venting costs heating energy as well: the heat vented in the afternoon is missing in the evening.
+  This is where a controller that plans ahead can do better.
+- Compute time: microseconds per step.
+
 ## Limitations
 
 - CO₂ is not modelled; VPD is reported as VPD.
@@ -114,6 +152,8 @@ Temperature and humidity errors (RMSE) on the emulator test days:
 - Light and soil moisture are monitored, not controlled (no lamps or irrigation actuator).
 - The network mostly learns the emulator: on the real test day its 1-hour temperature error is 2.3 °C
   (the "nothing changes" guess: 2.7 °C), mainly because of the emulator's own error against the real greenhouse.
+- The emulator's sensors have no noise. This favours the aggressive PID gain; with noisy sensors a real
+  installation would need lower gains or filtering.
 
 ## Roadmap
 
