@@ -8,6 +8,9 @@ command received on `greenhouse/actuators/control`. Start and end are announced 
     realtime  one step every `interval_sec` seconds, using the last command received
     lockstep  after publishing step k it waits for the controller's command for step k,
               so a run gives the same result however fast the controller is
+
+With forecast_steps > 0 every sensor message also carries "forecast": the weather of the next
+steps (entry 0 = now). The NN-MPC needs it for its prediction horizon.
 """
 
 import threading
@@ -16,7 +19,7 @@ import time
 import pandas as pd
 
 from src.emulator.greenhouse_emulator import GreenhouseEmulator
-from src.emulator.simulation import weather_at
+from src.emulator.simulation import forecast_at, weather_at
 from src.utils.mqtt_bridge import MQTTBridge
 
 
@@ -25,9 +28,10 @@ class EmulatorNode:
     # Settings, the last received command and the MQTT client
     def __init__(self, cfg: dict, emulator: GreenhouseEmulator, weather: pd.DataFrame,
                  interval_sec: float | None = None, lockstep: bool = False, command_timeout: float = 5.0,
-                 verbose: bool = True):
+                 verbose: bool = True, forecast_steps: int = 0):
         self.emu = emulator
         self.weather = weather
+        self.forecast_steps = forecast_steps
         self.interval = cfg["mqtt"]["publish_interval_sec"] if interval_sec is None else interval_sec
         self.lockstep = lockstep
         self.command_timeout = command_timeout
@@ -91,7 +95,10 @@ class EmulatorNode:
                 obs = self.emu.observe(w)
                 if self.lockstep:
                     self._new_command.clear()  # wait for the reply to this step only
-                self.bridge.publish_sensors({"step": k, **obs}, timestamp=self.emu.time.isoformat())
+                payload = {"step": k, **obs}
+                if self.forecast_steps:
+                    payload["forecast"] = forecast_at(self.weather, k, self.forecast_steps)
+                self.bridge.publish_sensors(payload, timestamp=self.emu.time.isoformat())
 
                 if self.lockstep:
                     self._wait_for_command(k)

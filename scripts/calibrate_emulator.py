@@ -18,6 +18,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import matplotlib
+
+matplotlib.use("Agg")  # figures go to files only, no windows (safe next to the MQTT threads)
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.optimize import least_squares

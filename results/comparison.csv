@@ -1,0 +1,14 @@
+metric,aggregate,pid_heat,pid_heat_vent,nn_mpc,difference,difference_pct
+total_kwh,sum,823.5368,878.9526,881.3819,2.4293,0.2764
+heater_kwh,sum,823.5368,847.3916,847.6824,0.2908,0.0343
+vent_kwh,sum,0.0,31.5611,33.6995,2.1384,6.7754
+temp_rmse_c,mean,5.8757,3.1302,3.0588,-0.0714,-2.281
+temp_max_dev_c,max,21.317,14.601,14.597,-0.004,-0.0274
+hours_in_band,sum,57.8333,62.5833,67.0833,4.5,7.1904
+cold_degree_hours,sum,0.0,0.0,0.0,0.0,
+warm_degree_hours,sum,336.7182,162.9982,156.5063,-6.4919,-3.9828
+humidity_rmse_pct,mean,15.431,18.5199,18.4539,-0.066,-0.3562
+vpd_rmse_kpa,mean,1.2961,1.0028,0.9932,-0.0096,-0.9598
+heater_travel_pct,sum,799.77,813.34,574.6908,-238.6492,-29.3419
+latency_mean_ms,mean,0.0034,0.0044,40.9641,40.9597,
+latency_max_ms,max,0.0208,0.078,330.5936,330.5156,

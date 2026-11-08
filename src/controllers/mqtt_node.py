@@ -24,6 +24,7 @@ class ControllerNode:
         self.bridge = MQTTBridge(cfg, client_name=f"controller-{controller.name}")
         self.finished = threading.Event()
         self.latency_ms: dict[int, float] = {}  # step -> compute time
+        self.info: dict[int, dict] = {}         # step -> controller diagnostics
         self.commands_sent = 0
 
     # Sensor message received: compute the command and send it back with the same step number
@@ -34,6 +35,7 @@ class ControllerNode:
         self.commands_sent += 1
         if step is not None:
             self.latency_ms[int(step)] = self.controller.last_latency_ms
+            self.info[int(step)] = dict(self.controller.last_info)
         if self.verbose and step is not None and int(step) % 12 == 0:
             print(f"  [{self.controller.name}] step {step}: {obs['temperature']:6.2f} °C -> heater {heater:5.1f} %  "
                   f"vent {vent:5.1f} %  ({self.controller.last_latency_ms:.3f} ms)")
@@ -44,6 +46,7 @@ class ControllerNode:
         if event == "started":
             self.controller.reset()
             self.latency_ms.clear()
+            self.info.clear()
             self.finished.clear()
         elif event == "finished":
             self.finished.set()

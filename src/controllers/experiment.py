@@ -21,7 +21,7 @@ from src.controllers.base import Controller
 from src.controllers.mqtt_node import ControllerNode
 from src.emulator.greenhouse_emulator import GreenhouseEmulator
 from src.emulator.mqtt_node import EmulatorNode
-from src.emulator.simulation import create_emulator, hold_target_policy, weather_at
+from src.emulator.simulation import create_emulator, forecast_at, hold_target_policy, weather_at
 from src.emulator.weather import SYNTHETIC_PROFILES, build_weather
 from src.models.data import jittered_cfg
 from src.utils.metrics import control_metrics
@@ -63,10 +63,13 @@ def run_offline(controller: Controller, emu: GreenhouseEmulator, weather: pd.Dat
     for k in range(len(weather)):
         w = weather_at(weather, k)
         obs = emu.observe(w)
-        heater, vent = controller({"timestamp": emu.time.isoformat(), "step": k, **obs})
+        payload = {"timestamp": emu.time.isoformat(), "step": k, **obs}
+        if controller.forecast_steps:
+            payload["forecast"] = forecast_at(weather, k, controller.forecast_steps)
+        heater, vent = controller(payload)
         rows.append({"time": emu.time, "step": k, **obs, "heater_power": heater, "ventilation_rate": vent,
                      "heater_energy_kwh": emu.heater_energy_kwh, "vent_energy_kwh": emu.vent_energy_kwh,
-                     "latency_ms": controller.last_latency_ms})
+                     "latency_ms": controller.last_latency_ms, **controller.last_info})
         emu.step(w, heater, vent)
     return pd.DataFrame(rows)
 
@@ -78,12 +81,16 @@ def run_mqtt(controller: Controller, emu: GreenhouseEmulator, weather: pd.DataFr
     node = ControllerNode(cfg, controller, verbose=verbose).start()
     try:
         time.sleep(0.2)  # let the controller's subscriptions settle
-        emulator = EmulatorNode(cfg, emu, weather, lockstep=True, command_timeout=command_timeout, verbose=verbose)
+        emulator = EmulatorNode(cfg, emu, weather, lockstep=True, command_timeout=command_timeout, verbose=verbose,
+                                forecast_steps=controller.forecast_steps)
         log = emulator.run()
         node.wait(2.0)
     finally:
         node.stop()
     log["latency_ms"] = log["step"].map(node.latency_ms)
+    info = pd.DataFrame.from_dict(node.info, orient="index")
+    for col in info.columns:
+        log[col] = log["step"].map(info[col])
     log.attrs["mqtt"] = {"commands_received": emulator.commands_received, "timeouts": emulator.timeouts}
     return log
 

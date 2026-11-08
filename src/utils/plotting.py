@@ -3,6 +3,9 @@
 from pathlib import Path
 
 import matplotlib.dates as mdates
+import matplotlib
+
+matplotlib.use("Agg")  # figures go to files only, no windows (safe next to the MQTT threads)
 import matplotlib.pyplot as plt
 import pandas as pd
 

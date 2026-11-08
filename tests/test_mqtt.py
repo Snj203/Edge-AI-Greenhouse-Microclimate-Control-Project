@@ -78,3 +78,19 @@ def test_pid_over_mqtt_matches_direct_calls(cfg):
     pd.testing.assert_frame_equal(over_mqtt[cols], direct[cols])
     assert direct["ventilation_rate"].max() > 0 and direct["heater_power"].max() > 0  # both loops took part
     assert over_mqtt["latency_ms"].notna().all()
+
+
+# NN-MPC: the forecast travels in the sensor message, and the MQTT run equals direct calls
+def test_nn_mpc_over_mqtt_matches_direct_calls(cfg):
+    from src.controllers.controller_nn_mpc import NNMPCController
+    weather, emu = prepare_run(cfg, "spring_variable", hours=2)
+    direct = run_offline(NNMPCController.from_config(cfg), copy.deepcopy(emu), weather)
+    seen = []
+    mpc = NNMPCController.from_config(cfg)
+    original = mpc.compute
+    mpc.compute = lambda obs: (seen.append(len(obs.get("forecast", []))), original(obs))[1]
+    over_mqtt = run_mqtt(mpc, emu, weather, cfg, command_timeout=5.0)
+    assert over_mqtt.attrs["mqtt"]["timeouts"] == 0
+    assert set(seen) == {mpc.N}
+    cols = ["temperature", "heater_power", "ventilation_rate", "mpc_bias"]
+    pd.testing.assert_frame_equal(over_mqtt[cols], direct[cols])

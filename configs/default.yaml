@@ -142,3 +142,15 @@ pid:
     kp: 30.0                # (tuned) %/°C
     ki: 0.5                 # (tuned) %/(°C·min)
     kd: 0.0                 # (tuned) %·min/°C
+
+# NN-MPC controller: J = Σ α·energy + β·(T − target)² + γ·(change of the actuators)² over the horizon
+mpc:
+  horizon_steps: 12         # N = 12 steps = 1 hour
+  alpha: 1.0                # weight of energy, per kWh (heater + fans, whole greenhouse)
+  beta: 10.0                # weight of the temperature error, per °C² per step
+  move_weight: 100.0        # (tuned) γ, weight of actuator changes (fractions 0–1): scripts/tune_mpc.py --write-config
+  max_iterations: 100       # SLSQP iterations per control step at most
+  interlock: true           # same rule as the PID: no ventilation while the heater is on
+  bias_gain: 0.3            # model correction: share of the one-step temperature error added to the bias
+  max_heater_power: 100.0   # %
+  max_vent_rate: 100.0      # %

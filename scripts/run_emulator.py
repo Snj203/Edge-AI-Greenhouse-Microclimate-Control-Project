@@ -5,6 +5,7 @@ Run the greenhouse emulator as an MQTT node.
     python scripts/run_emulator.py --profile winter_cloudy --interval 0.05
     python scripts/run_emulator.py --lockstep --interval 0        # wait for a controller every step
     python scripts/run_emulator.py --lockstep --interval 0 --warm # with scripts/run_controller.py (PID)
+    python scripts/run_emulator.py --lockstep --interval 0 --warm --forecast 12   # ... (NN-MPC)
 
 Watch the messages:  mosquitto_sub -t "greenhouse/#" -v
 Saves the run to results/emulator/run_<profile>.csv and a plot next to it.
@@ -34,6 +35,8 @@ def main() -> int:
                         help="real seconds per simulated step (realtime mode)")
     parser.add_argument("--lockstep", action="store_true", help="wait for a controller command every step")
     parser.add_argument("--timeout", type=float, default=5.0, help="lockstep: max seconds to wait per step")
+    parser.add_argument("--forecast", type=int, default=0,
+                        help="add the weather of the next N steps to every message (NN-MPC horizon)")
     parser.add_argument("--seed", type=int, default=0, help="random seed of the synthetic weather")
     parser.add_argument("--warm", action="store_true",
                         help="start from a greenhouse already held at the target (as in the controller runs)")
@@ -43,7 +46,7 @@ def main() -> int:
     weather = build_weather(cfg, args.profile, args.hours, args.seed)
     emu = warm_emulator(weather, cfg) if args.warm else create_emulator(weather, cfg)
     node = EmulatorNode(cfg, emu, weather, interval_sec=args.interval, lockstep=args.lockstep,
-                        command_timeout=args.timeout, verbose=not args.quiet)
+                        command_timeout=args.timeout, verbose=not args.quiet, forecast_steps=args.forecast)
     try:
         log = node.run()
     except ConnectionError as e:

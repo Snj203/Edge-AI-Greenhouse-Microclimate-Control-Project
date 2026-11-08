@@ -14,7 +14,7 @@ broker (Eclipse Mosquitto) between them, as in a real sensor → controller → 
 | 1 | Environment and MQTT, dataset analysis, greenhouse emulator and its calibration | done |
 | 2 | Surrogate neural network that predicts the greenhouse 5 minutes ahead | done |
 | 3 | PID baseline and the experiment setup | done |
-| 4 | NN-MPC controller and a first comparison with PID | planned |
+| 4 | NN-MPC controller and a first comparison with PID | done |
 
 ## Setup (Windows)
 
@@ -25,7 +25,7 @@ py -V:3.14 -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
 python scripts/check_env.py        # packages, PyTorch, dataset, MQTT broker
-python -m pytest                   # 37 tests
+python -m pytest                   # 45 tests (~1 min)
 ```
 
 Run all commands from the project root.
@@ -44,6 +44,10 @@ Run all commands from the project root.
 | Tune the PID gains (~1.5 min) | `python scripts/tune_pid.py [--write-config]` | `results/pid/tuning.*` |
 | PID on all weather profiles over MQTT (~1 min) | `python scripts/run_pid_baseline.py [--offline]` | `results/pid_baseline.csv`, `results/pid/` |
 | PID as its own process (two terminals) | `python scripts/run_controller.py` and `python scripts/run_emulator.py --lockstep --interval 0 --warm` | `results/emulator/run_dataset.*` |
+| Tune the NN-MPC move penalty γ (~10 min, parallel) | `python scripts/tune_mpc.py [--write-config]` | `results/mpc/tuning.*` |
+| NN-MPC on all weather profiles over MQTT (~2 min) | `python scripts/run_nn_mpc.py [--offline]` | `results/nn_mpc_runs.csv`, `results/mpc/` |
+| NN-MPC as its own process (two terminals) | `python scripts/run_controller.py --controller nn_mpc` and `python scripts/run_emulator.py --lockstep --interval 0 --warm --forecast 12` | `results/emulator/run_dataset.*` |
+| Compare PID and NN-MPC | `python scripts/compare_controllers.py` | `results/comparison.csv`, `results/comparison.png` |
 
 Watch the MQTT traffic: `mosquitto_sub -t "greenhouse/#" -v`
 
@@ -145,6 +149,50 @@ the output is at 0 or 100 % (anti-windup).
   This is where a controller that plans ahead can do better.
 - Compute time: microseconds per step.
 
+## NN-MPC
+
+Every 5 minutes the controller plans the heater and vents for the next hour (12 steps) with the trained
+network as the greenhouse model ([controller_nn_mpc.py](src/controllers/controller_nn_mpc.py)) and applies
+only the first step of the plan:
+
+    J = Σ_k  α·E(u_k) + β·(T_{k+1} − 22 °C)² + γ·|Δu_k|²     → minimum over the plan u_0 … u_11
+
+- **α = 1 per kWh, β = 10 per °C²** — the plan's weights. **γ = 100** penalises actuator changes: without it
+  the heater jumps up and down every step. γ is tuned like the PID (smallest γ with at most 1 % movement
+  per step on the 9 tuning days), without the interlock below; with the interlock the vents move somewhat
+  more (see [tune_mpc.py](scripts/tune_mpc.py)).
+- **Optimiser:** SciPy SLSQP with bounds 0–100 %. The exact gradient comes from the network rebuilt in
+  CasADi ([casadi_surrogate.py](src/models/casadi_surrogate.py)); through PyTorch it would be ~30× slower.
+- **Weather forecast:** the emulator adds the weather of the next 12 steps to every sensor message.
+- **Model correction:** the controller compares each new reading with its own prediction from the previous
+  step and adds the learned difference to its predictions (like the I part of a PID). Without it the
+  network's small steady error made the MPC hold 22.2 °C instead of 22.0 in winter.
+- **Same rule as the PID:** no ventilation while the heater is on.
+
+## First comparison with the PID
+
+Same instruction (hold 22 °C), same warm start and weather, 4 standard days, over MQTT
+([results/comparison.csv](results/comparison.csv), [results/comparison.png](results/comparison.png)):
+
+| Total / mean over the 4 days | PID (heater + vents) | NN-MPC | Difference |
+|---|---|---|---|
+| Energy | 879.0 kWh | 881.4 kWh | +0.3 % |
+| Temperature RMSE (mean) | 3.13 °C | 3.06 °C | −2 % |
+| Hours in 21–23 °C | 62.6 | 67.1 | +4.5 h (+7 %) |
+| Overheating above 23 °C | 163.0 °C·h | 156.5 °C·h | −4 % |
+| Heater movement Σ|Δu| | 813 % | 575 % | −29 % (smoother) |
+| Compute time per step, mean / max | 0.004 / 0.08 ms | 41 / 331 ms* | limit 500 ms |
+
+\* Measured while other programs were using the CPU; on the same PC when idle: 17 / 86 ms.
+
+- With the same instruction the NN-MPC uses the same energy and holds the climate somewhat better. The gain
+  comes from foresight: on mild days it opens the vents about 1.5 hours earlier, before the morning
+  warm-up, instead of reacting to it.
+- In winter both hold 22 °C; the NN-MPC more tightly (RMSE 0.09 vs 0.13 °C) with the same energy.
+- The plan's target of ≥ 15 % energy saving is not reached at equal comfort. A full comparison on more
+  days, including energy at equal comfort, is the next step (see Roadmap).
+- Every NN-MPC step stays below the 500 ms limit on the PC (SLSQP converges in ~15 iterations, at every step).
+
 ## Limitations
 
 - CO₂ is not modelled; VPD is reported as VPD.
@@ -154,10 +202,13 @@ the output is at 0 or 100 % (anti-windup).
   (the "nothing changes" guess: 2.7 °C), mainly because of the emulator's own error against the real greenhouse.
 - The emulator's sensors have no noise. This favours the aggressive PID gain; with noisy sensors a real
   installation would need lower gains or filtering.
+- The NN-MPC gets an ideal 1-hour weather forecast. Its compute time is measured on a PC; a Raspberry Pi 4
+  was not available.
+- The first comparison covers 4 days, one per weather profile.
 
 ## Roadmap
 
-After part 4:
+Next steps:
 - Full PID vs NN-MPC comparison on more days, energy at equal comfort, prediction horizon study, final report.
 - Comfort band (e.g. 21–23 °C) instead of a fixed set-point; other networks (LSTM, wider MLP).
 - Swappable greenhouse model: one interface for this emulator and an established open model (e.g. GreenLight).

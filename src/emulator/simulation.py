@@ -18,6 +18,17 @@ def weather_at(weather: pd.DataFrame, k: int) -> dict:
     return {c: float(row[c]) for c in WEATHER_COLUMNS}
 
 
+# Weather of steps k … k+n−1 with the names and rounding of the sensor message: an ideal forecast,
+# entry 0 = now. Past the end of the profile the last row is repeated
+def forecast_at(weather: pd.DataFrame, k: int, n: int) -> list[dict]:
+    out = []
+    for j in range(k, k + n):
+        w = weather_at(weather, min(j, len(weather) - 1))
+        out.append({"outdoor_temp": round(w["outdoor_temp"], 2), "outdoor_humidity": round(w["outdoor_rh"], 1),
+                    "solar_radiation": round(w["solar_radiation"], 1), "wind_speed": round(w["wind_speed"], 2)})
+    return out
+
+
 # Reference thermostat for the warm start: heats in proportion below `target`, vents in proportion
 # above `vent_above` (gain in % per °C). It is not one of the compared controllers.
 def hold_target_policy(target: float, vent_above: float, gain: float = 100.0) -> Policy:
