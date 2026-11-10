@@ -1,0 +1,66 @@
+{
+  "params": {
+    "thermal_capacity": 128301.60309510808,
+    "heat_loss_coeff": 9.217897901819514,
+    "solar_gain_factor": 0.43767561152714113,
+    "heater_max_power": 300.0,
+    "floor_capacity": 2481078.303222031,
+    "floor_coupling": 8.58864819367745,
+    "floor_ground_coupling": 2.6372156938504334,
+    "ground_temp": 16.40836089000873,
+    "greenhouse_height": 3.0,
+    "leak_ach": 0.4569878625844024,
+    "wind_ach": 0.07830098808918527,
+    "stack_ach": 0.4852318055587823,
+    "vent_max_ach": 30.0,
+    "vent_fan_power": 10.0,
+    "transp_rad_coeff": 2.6991147780870065e-06,
+    "transp_vpd_coeff": 0.004616158944727535,
+    "substrate_capacity": 35976.07417930807,
+    "substrate_coupling": 0.839236952762977,
+    "substrate_ground_coupling": 1.6667265516314087,
+    "soil_drain_rate": 0.11854075810468734,
+    "field_capacity": 49.171421376442595,
+    "excess_drain_rate": 0.5921522336285197,
+    "soil_water_capacity_mm": 8.915914149409055,
+    "wilting_point": 15.0,
+    "stress_point": 30.0,
+    "irrigation_threshold": 48.0,
+    "irrigation_target": 65.0,
+    "irrigation_start_hour": 9,
+    "irrigation_end_hour": 16,
+    "light_transmission": 0.22304894734586023
+  },
+  "metrics": {
+    "temperature": {
+      "rmse": 2.138,
+      "bias": -0.006,
+      "r2": 0.897
+    },
+    "humidity": {
+      "rmse": 4.97,
+      "bias": -0.062,
+      "r2": 0.897
+    },
+    "vpd": {
+      "rmse": 0.424,
+      "bias": -0.036,
+      "r2": 0.838
+    },
+    "soil_temperature": {
+      "rmse": 0.362,
+      "bias": 0.005,
+      "r2": 0.939
+    },
+    "soil_moisture": {
+      "rmse": 2.74,
+      "bias": 0.108,
+      "r2": 0.701
+    },
+    "light_ppfd": {
+      "rmse": 45.959,
+      "bias": 1.017,
+      "r2": 0.675
+    }
+  }
+}
